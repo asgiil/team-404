@@ -43,20 +43,48 @@ components:
         #       reason (string), score (0-100), dti (>= 0),
         #       amount_approved, term_approved, rate,
         #       bki ({score, delinquency}), smev (enum)
-        ?
+        app_id: {type: string, pattern: '^app_[0-9]{4}$'}
+        decision:
+          enum: [APPROVED, REFUSED, NEED_MORE_DATA, MANUAL_REVIEW]
+        reason: {type: string}
+        score: {type: integer, minimum: 0, maximum: 100}
+        dti: {type: number, minimum: 0}
+        amount_approved: {type: number, nullable: true }
+        term_approved: {type: integer, nullable: true}
+        bki:
+          type: object
+          properties:
+            score: {type: integer}
+            delinquency: {type: boolean}
+        smev:
+            enum: [MATCH, MISMATCH, TIMEOUT, NOT_CALLED]
+
+
 
     ExternalRequest:
       type: object
       properties:
         # TODO: request_id, service (BKI|SMEV), status, latency_ms, result
-        ?
+        request_id: {type: string, pattern: '^req_[0-9]{4}$'}
+        service: {enum: [BKI, SMEV]}
+        status: {enum: [SUCCESS, TIMEOUT, ERROR]}
+        latency_ms: {type: integer}
+        result: {type: object}
+
+
+
 
     Error:
       type: object
       required: [error_code, message]
       properties:
         # TODO: error_code, message, retryable, details
-        ?
+        error_code: {type: string}
+        message: {type: string}
+        retryable: {type: boolean}
+        details: {type: object}
+
+
 
 # ---------- paths ----------
 paths:
@@ -74,20 +102,36 @@ paths:
   # ---------- TODO: подача заявки ----------
   /api/v1/applications:
     post:
-      summary: TODO
+      summary: Подача заявки
       # TODO: requestBody Application, responses 201/422/409
-      ?
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Application'
+        responses:
+          '201': {description: Создано}
+          '422': {description: Ошибка данных}
+          '409': {description: Дубликат}
+
 
   # ---------- TODO: решение по заявке ----------
   /api/v1/applications/{id}/decision:
     get:
-      summary: TODO
+      summary: Получить решение
       # TODO: responses 200 (Decision), 404, 425 (ещё считается)
-      ?
+      responses:
+        '200': {description: Готово}
+        '404': {description: Не найдено}
+        '425': {description: Еще считаетс }
 
   # ---------- TODO: пересчёт (опционально) ----------
   /api/v1/applications/{id}/recalculate:
     post:
-      summary: TODO
+      summary: Пересчет
       # TODO: responses 200, 409
-      ?
+      responses:
+        '200': {description: Успешно}
+        '409': {description: Нельзя пересчитать}
+
