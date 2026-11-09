@@ -26,14 +26,25 @@ def bki_emulator(passport_hash):
     h = int(hashlib.md5(passport_hash.encode()).hexdigest(), 16) % 10
     if h <= 5:
         return (600 + h * 20, False)
-    # TODO: 6..9
+    if h >= 6 and h <= 8:
+        return (450 + h * 30, False)
+    if h == 9:
+        return (400, True)
+
     return (500, False)
 
 
 def smev_emulator(client_id):
     """TODO: MATCH для 9 из 10, MISMATCH для 10-го."""
     h = int(hashlib.md5(client_id.encode()).hexdigest(), 16) % 10
-    return "MISMATCH" if h == 0 else "MATCH"
+    if h >= 0 and h <= 9:
+        return "MISMATCH"
+    else:
+        return "MATCH"
+
+
+
+
 
 
 def validate(app):
@@ -44,6 +55,43 @@ def validate(app):
         age = int(app["age"])
         if age < 18 or age > 70:
             errors.append(("age", "AGE_OUT_OF_RANGE"))
+    else:
+        errors.append(("age", "AGE_OUT_OF_RANGE"))
+    if app.get("income"):
+        income = int(app["income"])
+        if income <= 0:
+            errors.append(("income", "MISSING_INCOME"))
+    else:
+        errors.append(("income", "MISSING_INCOME"))
+    if app.get("employment"):
+        employment = app["employment"]
+        if employment not in ["employed", "self-employed", "retired", "student", "unemployed"]:
+            errors.append(("employment", "INVALID_EMPLOYMENT"))
+    else:
+        errors.append(("employment", "INVALID_EMPLOYMENT"))
+    if app.get("family"):
+        family = app["family"]
+        if family not in ["single", "married", "children"]:
+            errors.append(("family", "INVALID_FAMILY"))
+    else:
+        errors.append(("family", "INVALID_FAMILY"))
+    if app.get("amount"):
+        amount = int(app["amount"])
+        if amount <= 0:
+            errors.append(("amount", "AMOUNT_LIMIT"))
+    else:
+        errors.append(("amount", "MISSING_AMOUNT"))
+    if app.get("term"):
+        term = int(app["term"])
+        if term <= 0:
+            errors.append(("term", "INVALID_TERM"))
+    else:
+        errors.append(("term", "INVALID_TERM"))
+    if app.get("income") and app.get("amount"):
+        amount = int(app["amount"])
+        income = int(app["income"])
+        if amount > 10 * income:
+            errors.append(("amount", "AMOUNT_LIMIT"))
     # TODO: income, employment, family, amount, term
     return errors
 
@@ -54,9 +102,13 @@ def score(app, bki_score, delinquency):
     s_income = 30 if income >= 150000 else 20 if income >= 80000 else 10 if income >= 40000 else 0
     s_emp = {"employed": 25, "self-employed": 20, "retired": 10,
              "student": 5, "unemployed": 0}[app["employment"]]
+    age = int(app["age"])
+    s_age = 20 if age >= 25 and age <= 50 else 10 if age < 25 or age >= 51 and age <= 60 else 5 if age >= 61 and age <= 70 else 0
+    s_family = {"married": 10, "children": 5, "single": 10}[app["family"]]
+    s_bki = 20 if bki_score >= 700 else 15 if bki_score >= 600 and bki_score <= 699 else 5 if bki_score >= 500 and bki_score <= 599 else 0
+    if delinquency: s_bki = 0
     # TODO: возраст, семья, БКИ
-    return s_income + s_emp
-
+    return s_income + s_emp + s_age + s_family + s_bki
 
 def compute_dti(amount, term, income):
     mr = 0.18 / 12
@@ -72,6 +124,17 @@ def decide(app, score_total, dti, delinquency, smev):
         return "REFUSED", "LOW_SCORE"
     if smev == "MISMATCH":
         return "REFUSED", "SMEV_MISMATCH"
+    if int(app["bki"]) < 500 or delinquency:
+        return "REFUSED","BKI_DELINQUENCY"
+    if int(app["age"]) >= 18 or int(app["age"]) <= 70:
+        return "REFUSED","AGE_OUT_OF_RANGE"
+    if  int(app["amount"]) > 10 * int(app["income"]):
+        return "REFUSED","AMOUNT_LIMIT"
+    if int(app["income"]) < 30000:
+        return "REFUSED","LOW_INCOME"
+    if int(app["employment"]) == "unemployed":
+        return "REFUSED","INVALID_EMPLOYMENT"
+
     return "APPROVED", ""
 
 
