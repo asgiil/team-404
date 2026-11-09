@@ -25,9 +25,9 @@ def bki_emulator(passport_hash):
     """TODO: 0..5 — score 600+, 6..8 — score 450+, 9 — delinquency."""
     h = int(hashlib.md5(passport_hash.encode()).hexdigest(), 16) % 10
     if h <= 5:
-        return (600 + h * 20, False)
+        return (600 + (1 + h)  * 20, False)
     if h >= 6 and h <= 8:
-        return (450 + h * 30, False)
+        return (450 + (h - 6) * 50, False)
     if h == 9:
         return (400, True)
 
@@ -37,7 +37,7 @@ def bki_emulator(passport_hash):
 def smev_emulator(client_id):
     """TODO: MATCH для 9 из 10, MISMATCH для 10-го."""
     h = int(hashlib.md5(client_id.encode()).hexdigest(), 16) % 10
-    if h >= 0 and h <= 9:
+    if h == 0:
         return "MISMATCH"
     else:
         return "MATCH"
@@ -48,7 +48,6 @@ def smev_emulator(client_id):
 
 
 def validate(app):
-    """TODO: проверить age, income, employment, family, amount, term."""
     errors = []
     # ОБРАЗЕЦ — age
     if app.get("age"):
@@ -77,7 +76,7 @@ def validate(app):
         errors.append(("family", "INVALID_FAMILY"))
     if app.get("amount"):
         amount = int(app["amount"])
-        if amount <= 0:
+        if amount < 10000 or amount > 5000000:
             errors.append(("amount", "AMOUNT_LIMIT"))
     else:
         errors.append(("amount", "MISSING_AMOUNT"))
@@ -87,26 +86,20 @@ def validate(app):
             errors.append(("term", "INVALID_TERM"))
     else:
         errors.append(("term", "INVALID_TERM"))
-    if app.get("income") and app.get("amount"):
-        amount = int(app["amount"])
-        income = int(app["income"])
-        if amount > 10 * income:
-            errors.append(("amount", "AMOUNT_LIMIT"))
     # TODO: income, employment, family, amount, term
     return errors
 
 
 def score(app, bki_score, delinquency):
-    """TODO: считать score по весам."""
     income = float(app["income"])
     s_income = 30 if income >= 150000 else 20 if income >= 80000 else 10 if income >= 40000 else 0
     s_emp = {"employed": 25, "self-employed": 20, "retired": 10,
              "student": 5, "unemployed": 0}[app["employment"]]
     age = int(app["age"])
     s_age = 20 if age >= 25 and age <= 50 else 10 if age < 25 or age >= 51 and age <= 60 else 5 if age >= 61 and age <= 70 else 0
-    s_family = {"married": 10, "children": 5, "single": 10}[app["family"]]
-    s_bki = 20 if bki_score >= 700 else 15 if bki_score >= 600 and bki_score <= 699 else 5 if bki_score >= 500 and bki_score <= 599 else 0
-    if delinquency: s_bki = 0
+    s_family = {"married": 15, "children": 15, "single": 10}[app["family"]]
+    s_bki = 10 if bki_score >= 700 else 5 if bki_score >= 600 and bki_score <= 699 else 0 if bki_score >= 500 and bki_score <= 599 else -20
+    if delinquency: s_bki = -20
     # TODO: возраст, семья, БКИ
     return s_income + s_emp + s_age + s_family + s_bki
 
@@ -116,24 +109,23 @@ def compute_dti(amount, term, income):
     return round(payment / income, 2) if income else None
 
 
-def decide(app, score_total, dti, delinquency, smev):
-    """TODO: 8 правил отказа."""
-    if dti is not None and dti > 0.5:
-        return "REFUSED", "HIGH_DTI"
-    if score_total < 60:
-        return "REFUSED", "LOW_SCORE"
-    if smev == "MISMATCH":
-        return "REFUSED", "SMEV_MISMATCH"
-    if int(app["bki"]) < 500 or delinquency:
-        return "REFUSED","BKI_DELINQUENCY"
-    if int(app["age"]) >= 18 or int(app["age"]) <= 70:
+def decide(app, score_total, dti, delinquency, smev, bki_score):
+    if int(app["age"]) < 18 or int(app["age"]) > 70:
         return "REFUSED","AGE_OUT_OF_RANGE"
-    if  int(app["amount"]) > 10 * int(app["income"]):
-        return "REFUSED","AMOUNT_LIMIT"
+    if app["employment"] == "unemployed":
+        return "REFUSED","INVALID_EMPLOYMENT"
     if int(app["income"]) < 30000:
         return "REFUSED","LOW_INCOME"
-    if int(app["employment"]) == "unemployed":
-        return "REFUSED","INVALID_EMPLOYMENT"
+    if dti is not None and dti > 0.5:
+        return "REFUSED", "HIGH_DTI"
+    if bki_score < 500 or delinquency:
+        return "REFUSED","BKI_DELINQUENCY"
+    if int(app["amount"]) > 10 * int(app["income"]):
+        return "REFUSED", "AMOUNT_LIMIT"
+    if smev == "MISMATCH":
+        return "REFUSED", "SMEV_MISMATCH"
+    if score_total < 60:
+        return "REFUSED", "LOW_SCORE"
 
     return "APPROVED", ""
 
@@ -148,7 +140,7 @@ def process(app):
     smev = smev_emulator(app["client_id"])
     score_total = score(app, bki_score, delinq)
     dti = compute_dti(float(app["amount"]), int(app["term"]), float(app["income"]))
-    decision, reason = decide(app, score_total, dti, delinq, smev)
+    decision, reason = decide(app, score_total, dti, delinq, smev, bki_score)
 
     return {"app_id": app["app_id"], "decision": decision, "reason": reason,
             "score": score_total, "dti": dti}
